@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport" />
+    <title>Hindi &amp; English Essays Collection</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&amp;family=Noto+Sans:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link href="style.css" rel="stylesheet" />
+</head>
+
+<body>
+    <!-- Rainbow Border -->
+    <div class="rainbow-border"></div>
+    <!-- Progress Bar -->
+    <div class="progress-bar" id="progressBar"></div>
+
+    <!-- 3-Dot Menu Button (Top Right) -->
+    <button class="three-dot-btn" id="threeDotBtn" onclick="toggleThreeDotMenu()" title="More Options">
+        ⋮
+    </button>
+    <!-- 3-Dot Dropdown -->
+    <div class="three-dot-dropdown" id="threeDotDropdown">
+        <div class="tdd-header">⚙️ More Features</div>
+        <button class="tdd-item" onclick="showEssayStats()"><span>📊</span> Essay Statistics</button>
+        <button class="tdd-item" onclick="copyEssayText()"><span>📋</span> Copy Essay</button>
+        <button class="tdd-item" onclick="shareEssay()"><span>📤</span> Share Essay</button>
+        <button class="tdd-item" onclick="translateEssay()"><span>🌐</span> Translate (Free API)</button>
+        <button class="tdd-item" onclick="exportAsTxt()"><span>📄</span> Export as TXT</button>
+        <button class="tdd-item" onclick="toggleBookmark()"><span id="bookmarkIcon">🔖</span> <span
+                id="bookmarkText">Bookmark Essay</span></button>
+        <button class="tdd-item" onclick="searchInEssay()"><span>🔍</span> Search in Essay</button>
+        <button class="tdd-item" onclick="toggleAutoScroll()"><span>📜</span> <span
+                id="autoScrollText">Auto-Scroll</span></button>
+        <button class="tdd-item" onclick="readAloud()"><span>🔊</span> <span id="readAloudText">Read
+                Aloud</span></button>
+        <button class="tdd-item" onclick="toggleNightFilter()"><span>🌙</span> <span id="nightFilterText">Night
+                Filter</span></button>
+        <button class="tdd-item" onclick="openTimer()"><span>⏱️</span> Live Timer</button>
+        <button class="tdd-item" onclick="jumpToEssay()"><span>🔢</span> Jump to Essay #</button>
+        <button class="tdd-item" onclick="deleteEssay()"><span>🗑️</span> Delete Essay</button>
+        <button class="tdd-item" onclick="resetSettings()"><span>🔄</span> Reset All Settings</button>
+        <button class="tdd-item" onclick="showAbout()"><span>ℹ️</span> About App</button>
+    </div>
+
+    <!-- Tabs at Top -->
+    <div class="tabs-container">
+        <div class="tabs-wrapper" id="tabsWrapper">
+            <div class="tabs" id="tabsContainer"></div>
+        </div>
+    </div>
+
+    <div class="main-wrapper">
+        <!-- Text Area in Middle -->
+        <div class="text-area" id="textArea">
+            <div id="contentContainer"></div>
+            <!-- Add Essay editable area (hidden by default) -->
+            <div id="addEssayArea" style="display:none;">
+                <div class="essay-title" style="color:var(--tab-active);-webkit-text-fill-color:var(--tab-active);">✍️
+                    Add New Essay</div>
+                <textarea id="essayInput" class="essay-textarea"
+                    placeholder="Paste or type your essay text here..."></textarea>
+                <div style="text-align:center;margin-top:18px;">
+                    <button class="modern-btn btn-save-essay" onclick="openSaveModal()">💾 Save Essay</button>
+                    <button class="modern-btn btn-cancel-essay" onclick="cancelAddEssay()">✖ Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls at Bottom -->
+        <div class="controls-container controls-wrapper" id="controls">
+            <!-- Column 1: Sliders & Selects -->
+            <div class="control-column">
+                <div class="control-group">
+                    <label>
+                        <span class="ui-text" data-key="fontSize">फ़ॉन्ट साइज़ / Size</span>
+                        <span class="size-display" id="sizeDisplay">24px</span>
+                    </label>
+                    <input id="fontSize" max="52" min="14" step="1" type="range" value="24" />
+                </div>
+                <div class="control-group" style="margin-top: 12px;">
+                    <label class="ui-text" data-key="fontStyle">फ़ॉन्ट स्टाइल / Font Style</label>
+                    <select id="fontStyle">
+                        <option value="'Noto Sans', 'Noto Sans Devanagari', sans-serif">Sans Serif (Default)</option>
+                        <option value="'Times New Roman', serif">Serif</option>
+                        <option value="'Courier New', monospace">Monospace</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                    </select>
+                </div>
+                <div class="control-group" style="margin-top: 12px;">
+                    <label class="ui-text" data-key="color">टेक्स्ट रंग / Color</label>
+                    <select id="textColor">
+                        <option class="ui-text" data-key="colorDefault" value="default">डिफ़ॉल्ट / Default</option>
+                        <option value="#ff6b6b">लाल / Red</option>
+                        <option value="#4a90e2">नीला / Blue</option>
+                        <option value="#2ecc71">हरा / Green</option>
+                        <option value="#f1c40f">पीला / Yellow</option>
+                        <option value="#9b59b6">बैंगनी / Purple</option>
+                        <option value="#e74c3c">सुनहरा / Orange</option>
+                        <option value="#00cec9">सियान / Cyan</option>
+                        <option value="#fd79a8">गुलाबी / Pink</option>
+                    </select>
+                </div>
+            </div>
+            <!-- Column 2: All Buttons Grid -->
+            <div class="control-column">
+                <div class="action-buttons">
+                    <!-- Row 1: Formatting -->
+                    <button class="modern-btn btn-bold" onclick="toggleBold()">
+                        <b>B</b>
+                        <span class="ui-text" data-key="btnBold">Bold</span>
+                    </button>
+                    <button class="modern-btn btn-size" onclick="adjustSize(-2)"><span>A-</span></button>
+                    <button class="modern-btn btn-size" onclick="adjustSize(2)"><span>A+</span></button>
+                    <!-- Row 2: Theme/Lang -->
+                    <button class="modern-btn btn-lang" onclick="toggleLanguage()">
+                        <span id="langIcon">अ/A</span>
+                        <span class="ui-text" data-key="langBtn">Eng</span>
+                    </button>
+                    <button class="modern-btn btn-theme" onclick="toggleTheme()">
+                        <span id="themeIcon">☀️</span>
+                        <span class="ui-text" data-key="themeBtn">Light</span>
+                    </button>
+                    <button class="modern-btn btn-color" onclick="cycleColor()"><span>🎨</span></button>
+                    <!-- Row 3: Actions -->
+                    <button class="modern-btn btn-focus" onclick="toggleFocus()">
+                        <span>🎯</span>
+                        <span class="ui-text" data-key="focusBtn">Focus</span>
+                    </button>
+                    <button class="modern-btn btn-fullscreen" onclick="toggleFullscreen()">
+                        <span>⛶</span>
+                        <span class="ui-text" data-key="fullscreenBtn">Full</span>
+                    </button>
+                    <button class="modern-btn btn-print" onclick="printEssay()">
+                        <span>🖨️</span>
+                        <span class="ui-text" data-key="printBtn">Print</span>
+                    </button>
+                    <!-- Row 4: Reading Mode -->
+                    <button class="modern-btn btn-reading" onclick="toggleReadingMode()">
+                        <span>📖</span>
+                        <span class="ui-text" data-key="readingBtn">Reading Mode (40px + Yellow + Bold)</span>
+                    </button>
+                    <!-- Row 5: Add Essay -->
+                    <button class="modern-btn btn-add-essay" onclick="openAddEssay()">
+                        <span>➕</span>
+                        <span>Add Essay</span>
+                    </button>
+                </div>
+            </div>
+            <!-- Column 3: Shortcuts -->
+            <div class="shortcuts">
+                <div class="shortcut-header ui-text" data-key="shortcuts">⌨️ शॉर्टकट्स / Shortcuts</div>
+                <div class="shortcut-grid">
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scScroll">स्क्रॉल / Scroll</span>
+                        <span class="key">↑/↓</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scSize">साइज़ / Size</span>
+                        <span class="key">←/→</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scBold">बोल्ड / Bold</span>
+                        <span class="key">B</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scFocus">फोकस / Focus</span>
+                        <span class="key">H</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scColor">रंग / Color</span>
+                        <span class="key">G</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scTheme">थीम / Theme</span>
+                        <span class="key">J</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scReading">रीडिंग / Reading</span>
+                        <span class="key">R</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scFullscreen">फुलस्क्रीन</span>
+                        <span class="key">F</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scNext">अगला / Next</span>
+                        <span class="key">N</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scPrev">पिछला / Prev</span>
+                        <span class="key">P</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scHelp">मदद / Help</span>
+                        <span class="key">?</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <span class="ui-text" data-key="scExit">बंद / Exit</span>
+                        <span class="key">ESC</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Buttons (Mobile) -->
+    <div class="fab-container" id="fabContainer">
+        <div class="fab-menu" id="fabMenu">
+            <button class="fab fab-secondary" onclick="toggleBold()" title="Bold">𝐁</button>
+            <button class="fab fab-secondary" onclick="adjustSize(2)" title="Increase Size">𝐀+</button>
+            <button class="fab fab-secondary" onclick="adjustSize(-2)" title="Decrease Size">𝐀-</button>
+            <button class="fab fab-secondary" onclick="toggleTheme()" title="Theme">☀️</button>
+            <button class="fab fab-secondary" onclick="toggleReadingMode()" title="Reading Mode">📖</button>
+            <button class="fab fab-secondary" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
+        </div>
+        <button class="fab" id="fabMain" onclick="toggleFabMenu()">⚡</button>
+    </div>
+
+    <!-- Focus Message -->
+    <div class="focus-message" id="focusMessage">Press 'ESC' or 'H' to exit | '?' for shortcuts</div>
+
+    <!-- Shortcuts Modal -->
+    <div class="shortcuts-modal" id="shortcutsModal" onclick="closeShortcutsModal(event)">
+        <div class="shortcuts-content" onclick="event.stopPropagation()">
+            <div class="shortcuts-title">⌨️ Keyboard Shortcuts</div>
+            <div class="shortcut-row"><span>Scroll Up/Down</span><span class="key">↑ / ↓</span></div>
+            <div class="shortcut-row"><span>Increase/Decrease Font Size</span><span class="key">→ / ←</span></div>
+            <div class="shortcut-row"><span>Toggle Bold</span><span class="key">B</span></div>
+            <div class="shortcut-row"><span>Toggle Focus Mode</span><span class="key">H</span></div>
+            <div class="shortcut-row"><span>Toggle Reading Mode</span><span class="key">R</span></div>
+            <div class="shortcut-row"><span>Toggle Fullscreen</span><span class="key">F</span></div>
+            <div class="shortcut-row"><span>Cycle Text Color</span><span class="key">G</span></div>
+            <div class="shortcut-row"><span>Toggle Theme</span><span class="key">J</span></div>
+            <div class="shortcut-row"><span>Next Essay</span><span class="key">N</span></div>
+            <div class="shortcut-row"><span>Previous Essay</span><span class="key">P</span></div>
+            <div class="shortcut-row"><span>Show/Hide Help</span><span class="key">?</span></div>
+            <div class="shortcut-row"><span>Exit Any Mode</span><span class="key">ESC</span></div>
+            <button class="close-modal" onclick="hideShortcutsModal()">Close</button>
+        </div>
+    </div>
+
+    <!-- Save Essay Modal -->
+    <div class="modal-overlay" id="saveEssayOverlay" onclick="closeSaveModal()">
+        <div class="save-essay-modal" onclick="event.stopPropagation()">
+            <div class="sem-header">💾 Save Essay</div>
+            <div class="sem-group">
+                <label class="sem-label">📝 Essay Title</label>
+                <input type="text" id="essayTitleInput" class="sem-input" placeholder="Enter essay title..." />
+            </div>
+            <div class="sem-group">
+                <label class="sem-label">📍 Insert After Essay #</label>
+                <select id="essayPositionSelect" class="sem-select">
+                    <!-- Options filled by JS -->
+                </select>
+            </div>
+            <div class="sem-group" id="customPosGroup" style="display:none;">
+                <label class="sem-label">🔢 Custom Position Number</label>
+                <input type="number" id="customPosInput" class="sem-input" placeholder="e.g. 40" min="0" />
+                <small style="color:#888;margin-top:4px;display:block;">Essay will be placed after this number</small>
+            </div>
+            <div class="sem-actions">
+                <button class="modern-btn btn-save-confirm" onclick="confirmSaveEssay()">✅ Save</button>
+                <button class="modern-btn btn-cancel-essay" onclick="closeSaveModal()">✖ Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timer Popup -->
+    <div class="timer-popup" id="timerPopup">
+        <div class="timer-header">
+            <span>⏱️ Live Timer</span>
+            <button class="timer-close-btn" onclick="closeTimer()">✕</button>
+        </div>
+        <div class="timer-mode-switch">
+            <button class="timer-mode-btn active" id="stopwatchModeBtn"
+                onclick="switchTimerMode('stopwatch')">Stopwatch</button>
+            <button class="timer-mode-btn" id="countdownModeBtn"
+                onclick="switchTimerMode('countdown')">Countdown</button>
+        </div>
+        <div id="countdownSetup" style="display:none;">
+            <div class="countdown-inputs">
+                <input type="number" id="cdMinutes" class="cd-input" value="5" min="0" max="999" placeholder="Min" />
+                <span>:</span>
+                <input type="number" id="cdSeconds" class="cd-input" value="0" min="0" max="59" placeholder="Sec" />
+            </div>
+        </div>
+        <div class="timer-display" id="timerDisplay">00:00:00</div>
+        <div class="timer-controls">
+            <button class="timer-ctrl-btn tc-start" id="timerStartBtn" onclick="startTimer()">▶ Start</button>
+            <button class="timer-ctrl-btn tc-pause" id="timerPauseBtn" onclick="pauseTimer()" style="display:none;">⏸
+                Pause</button>
+            <button class="timer-ctrl-btn tc-reset" onclick="resetTimer()">↺ Reset</button>
+        </div>
+    </div>
+
+    <!-- Night Filter Overlay -->
+    <div class="night-filter-overlay" id="nightFilterOverlay"></div>
+
+    <!-- Search in Essay Modal -->
+    <div class="modal-overlay" id="searchOverlay" onclick="closeSearch()">
+        <div class="search-modal" onclick="event.stopPropagation()">
+            <div class="sem-header">🔍 Search in Essay</div>
+            <input type="text" id="searchInput" class="sem-input" placeholder="Type to search..."
+                oninput="performSearch()" />
+            <div id="searchResults" class="search-results"></div>
+            <button class="modern-btn btn-cancel-essay" onclick="closeSearch()" style="margin-top:12px;">Close</button>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal-overlay" id="aboutOverlay" onclick="closeAbout()">
+        <div class="about-modal" onclick="event.stopPropagation()">
+            <div class="about-title">📚 Essay Collection App</div>
+            <div class="about-body">
+                <p>A beautiful Hindi & English essay reading app with rich features.</p>
+                <p><strong>Features:</strong></p>
+                <ul>
+                    <li>📖 Reading Mode with large font</li>
+                    <li>➕ Add & save custom essays</li>
+                    <li>🌐 Free translation via API</li>
+                    <li>🔊 Text-to-Speech</li>
+                    <li>⏱️ Live Timer / Countdown</li>
+                    <li>🔍 Search within essays</li>
+                    <li>📜 Auto-scroll reading</li>
+                    <li>🌙 Night filter mode</li>
+                    <li>📊 Essay statistics</li>
+                    <li>🔖 Bookmark essays</li>
+                    <li>📄 Export as TXT</li>
+                    <li>🖨️ Print with current styling</li>
+                    <li>🎨 Multiple themes & colors</li>
+                    <li>⌨️ Keyboard shortcuts</li>
+                    <li>📱 Mobile swipe gestures</li>
+                </ul>
+                <p style="margin-top:12px;opacity:0.6;font-size:12px;">Made with ❤️</p>
+            </div>
+            <button class="close-modal" onclick="closeAbout()">Close</button>
+        </div>
+    </div>
+
+    <!-- Stats Modal -->
+    <div class="modal-overlay" id="statsOverlay" onclick="closeStats()">
+        <div class="stats-modal" onclick="event.stopPropagation()">
+            <div class="sem-header">📊 Essay Statistics</div>
+            <div id="statsContent" class="stats-content"></div>
+            <button class="close-modal" onclick="closeStats()">Close</button>
+        </div>
+    </div>
+
+    <script defer="True" src="script.js"></script>
+</body>
+
+</html>
