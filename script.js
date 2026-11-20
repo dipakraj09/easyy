@@ -438,8 +438,8 @@ let autoScrollInterval = null;
 let isAutoScrolling = false;
 let nightFilterActive = false;
 let timerInterval = null;
-let timerSeconds = 0;
-let timerMode = 'stopwatch'; // or 'countdown'
+let timerSeconds = 900; // default 15 min
+let timerMode = 'countdown'; // or 'stopwatch'
 let isTimerRunning = false;
 let customEssays = [];
 let draggedTabIndex = null;
@@ -476,6 +476,7 @@ function init() {
     setupHorizontalScroll();
     setupLongPressHighlight();
     updateProgressBar();
+    applyRgbLight();
 
     // Check local storage for theme
     const savedTheme = localStorage.getItem('theme');
@@ -507,6 +508,20 @@ function loadCustomEssays() {
     const stored = localStorage.getItem('customEssays');
     if (stored) {
         customEssays = JSON.parse(stored);
+        customEssays.forEach(essay => {
+            essay.title = essay.title || { hi: '', en: '' };
+            essay.content = essay.content || { hi: '', en: '' };
+            if (essay.content.hi && essay.content.hi === essay.content.en) {
+                const devanagari = (essay.content.hi.match(/[\u0900-\u097F]/g) || []).length;
+                if (devanagari > essay.content.hi.length * 0.08) {
+                    essay.title.en = '';
+                    essay.content.en = '';
+                } else {
+                    essay.title.hi = '';
+                    essay.content.hi = '';
+                }
+            }
+        });
         // Insert custom essays into main data
         customEssays.forEach(essay => {
             // Avoid duplicates if already added
@@ -722,8 +737,10 @@ function confirmSaveEssay() {
     // ----- Editing an existing essay -----
     if (editingEssay) {
         const oldKey = essayOrderKey(editingEssay);
-        editingEssay.title = { hi: title, en: title };
-        editingEssay.content = { hi: text, en: text };
+        editingEssay.title = editingEssay.title || { hi: '', en: '' };
+        editingEssay.content = editingEssay.content || { hi: '', en: '' };
+        editingEssay.title[currentLang] = title;
+        editingEssay.content[currentLang] = text;
         saveCustomEssays();
         renameBookmark(oldKey, essayOrderKey(editingEssay));
         saveEssayOrder();
@@ -757,8 +774,8 @@ function confirmSaveEssay() {
     }
 
     const newEssay = {
-        title: { hi: title, en: title },
-        content: { hi: text, en: text },
+        title: { hi: currentLang === 'hi' ? title : '', en: currentLang === 'en' ? title : '' },
+        content: { hi: currentLang === 'hi' ? text : '', en: currentLang === 'en' ? text : '' },
         isCustom: true,
         position: position
     };
@@ -875,29 +892,203 @@ function shareEssay() {
     toggleThreeDotMenu();
 }
 
-async function translateEssay() {
-    showToast("Translating... Please wait ⏳");
-    const text = essaysData[currentTab].content['hi']; // Always source from Hindi for now or current
-    const sourceLang = currentLang === 'hi' ? 'hi' : 'en';
-    const targetLang = currentLang === 'hi' ? 'en' : 'hi';
+function getLanguageOverrides() {
+    try { return JSON.parse(localStorage.getItem('essayLanguageOverrides') || '{}'); }
+    catch (_) { return {}; }
+}
 
-    // Using MyMemory Translation API (Free, limited)
-    // Splitting text because GET request limit is usually small
-    // For demo/simple use, we take first 500 chars to avoid errors
-    const snippet = text.substring(0, 500);
+function languageOverrideKey(essay) {
+    return essay.title.hi || essay.title.en;
+}
 
-    try {
-        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(snippet)}&langpair=${sourceLang}|${targetLang}`);
-        const data = await res.json();
-
-        if (data.responseData.translatedText) {
-            alert("Translation Check (First 500 chars):\n\n" + data.responseData.translatedText);
-        } else {
-            showToast("Translation failed.");
-        }
-    } catch (e) {
-        showToast("Error connecting to translation service.");
+function getEssayValue(essay, field, lang) {
+    const overrides = getLanguageOverrides();
+    const key = languageOverrideKey(essay);
+    if (overrides[key] && typeof overrides[key][field + '_' + lang] === 'string') {
+        return overrides[key][field + '_' + lang];
     }
+    return (essay[field] && essay[field][lang]) || '';
+}
+
+function setEssayValue(essay, field, lang, value) {
+    if (essay.isCustom) {
+        essay[field] = essay[field] || { hi: '', en: '' };
+        essay[field][lang] = value;
+        const custom = customEssays.find(item => item === essay || essayOrderKey(item) === essayOrderKey(essay));
+        if (custom) {
+            custom[field] = custom[field] || { hi: '', en: '' };
+            custom[field][lang] = value;
+            saveCustomEssays();
+        }
+    } else {
+        const overrides = getLanguageOverrides();
+        const key = languageOverrideKey(essay);
+        overrides[key] = overrides[key] || {};
+        overrides[key][field + '_' + lang] = value;
+        localStorage.setItem('essayLanguageOverrides', JSON.stringify(overrides));
+    }
+}
+
+function splitTranslationChunks(text, maxLength = 430) {
+    const chunks = [];
+    let current = '';
+    for (const paragraph of text.split(/\n+/)) {
+        const words = paragraph.split(/\s+/).filter(Boolean);
+        for (const word of words) {
+            if (word.length > maxLength) {
+                if (current) { chunks.push(current); current = ''; }
+                for (let i = 0; i < word.length; i += maxLength) chunks.push(word.slice(i, i + maxLength));
+            } else if (!current) current = word;
+            else if ((current + ' ' + word).length <= maxLength) current += ' ' + word;
+            else { chunks.push(current); current = word; }
+        }
+        if (current) { chunks.push(current); current = ''; }
+        chunks.push('\n\n');
+    }
+    if (chunks.length && chunks[chunks.length - 1] === '\n\n') chunks.pop();
+    return chunks;
+}
+
+async function translateTextFully(text, sourceLang, targetLang) {
+    const chunks = splitTranslationChunks(text);
+    let result = '';
+    for (const chunk of chunks) {
+        if (chunk === '\n\n') { result = result.replace(/\s+$/, '') + '\n\n'; continue; }
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${sourceLang}|${targetLang}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Translation service unavailable');
+        const data = await response.json();
+        const translated = data?.responseData?.translatedText;
+        if (!translated || data.responseStatus >= 400) throw new Error(data.responseDetails || 'Translation failed');
+        result += translated + ' ';
+    }
+    return result.replace(/ +\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function toggleLanguage() {
+    const essay = essaysData[currentTab];
+    if (!essay) return;
+    const sourceLang = currentLang;
+    const targetLang = sourceLang === 'hi' ? 'en' : 'hi';
+    const sourceText = getEssayValue(essay, 'content', sourceLang);
+    const targetText = getEssayValue(essay, 'content', targetLang);
+
+    if (!targetText.trim() && sourceText.trim()) {
+        showToast('Translating the full essay… ⏳');
+        const button = document.querySelector('.btn-lang');
+        if (button) button.disabled = true;
+        try {
+            const sourceTitle = getEssayValue(essay, 'title', sourceLang) || firstLineTitle(sourceText);
+            const [translatedTitle, translatedText] = await Promise.all([
+                translateTextFully(sourceTitle, sourceLang, targetLang),
+                translateTextFully(sourceText, sourceLang, targetLang)
+            ]);
+            setEssayValue(essay, 'title', targetLang, translatedTitle);
+            setEssayValue(essay, 'content', targetLang, translatedText);
+            showToast('Full essay translated and saved ✅');
+        } catch (error) {
+            showToast('Translation failed. Check your connection or try a shorter essay.');
+            if (button) button.disabled = false;
+            return;
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    currentLang = targetLang;
+    updateUILanguage();
+    renderContent();
+}
+
+function manualLanguageEntry(event) {
+    if (event) event.preventDefault();
+    const essay = essaysData[currentTab];
+    if (!essay) return false;
+    const targetLang = currentLang === 'hi' ? 'en' : 'hi';
+    const languageName = targetLang === 'en' ? 'English' : 'हिंदी (Hindi)';
+    document.getElementById('manualLangTitleHead').textContent = '✍️ ' + languageName + ' manually add karein';
+    document.getElementById('manualLangTitle').value = getEssayValue(essay, 'title', targetLang);
+    document.getElementById('manualLangText').value = getEssayValue(essay, 'content', targetLang);
+    document.getElementById('manualLangOverlay').dataset.target = targetLang;
+    document.getElementById('manualLangOverlay').style.display = 'flex';
+    setTimeout(() => document.getElementById('manualLangTitle').focus(), 50);
+    return false;
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeManualLang();
+});
+
+async function autoFillManualLang() {
+    const essay = essaysData[currentTab];
+    if (!essay) return;
+    const targetLang = document.getElementById('manualLangOverlay').dataset.target || (currentLang === 'hi' ? 'en' : 'hi');
+    const sourceLang = targetLang === 'en' ? 'hi' : 'en';
+    const srcText = getEssayValue(essay, 'content', sourceLang);
+    if (!srcText.trim()) { showToast('Source essay khali hai.'); return; }
+    const srcTitle = getEssayValue(essay, 'title', sourceLang) || firstLineTitle(srcText);
+    const btn = document.getElementById('manualLangAutoBtn');
+    btn.disabled = true; btn.textContent = '⏳ Translating…';
+    try {
+        const [t, c] = await Promise.all([
+            translateTextFully(srcTitle, sourceLang, targetLang),
+            translateTextFully(srcText, sourceLang, targetLang)
+        ]);
+        document.getElementById('manualLangTitle').value = t;
+        document.getElementById('manualLangText').value = c;
+        showToast('Translate ho gaya, check karke Save dabayein ✅');
+    } catch (e) {
+        showToast('Translation fail hua. Internet check karein.');
+    } finally {
+        btn.disabled = false; btn.textContent = '🌐 Auto Translate';
+    }
+}
+
+function closeManualLang() {
+    document.getElementById('manualLangOverlay').style.display = 'none';
+}
+
+function saveManualLang() {
+    const essay = essaysData[currentTab];
+    if (!essay) return;
+    const overlay = document.getElementById('manualLangOverlay');
+    const targetLang = overlay.dataset.target || (currentLang === 'hi' ? 'en' : 'hi');
+    const title = document.getElementById('manualLangTitle').value.trim();
+    const content = document.getElementById('manualLangText').value.trim();
+    if (!title || !content) {
+        showToast('Title aur poora essay dono likhein.');
+        return;
+    }
+    setEssayValue(essay, 'title', targetLang, title);
+    setEssayValue(essay, 'content', targetLang, content);
+    closeManualLang();
+    currentLang = targetLang;
+    updateUILanguage();
+    renderContent();
+    showToast((targetLang === 'en' ? 'English' : 'Hindi') + ' save ho gaya ✅');
+}
+
+// ----- RGB light (rainbow top border): default OFF, switch in the ⋮ menu -----
+let rgbLightOn = localStorage.getItem('rgbLightOn') === '1';
+function applyRgbLight() {
+    const el = document.querySelector('.rainbow-border');
+    if (el) el.style.display = rgbLightOn ? '' : 'none';
+    const pb = document.getElementById('progressBar');
+    if (pb) pb.style.display = rgbLightOn ? '' : 'none';
+    const t = document.getElementById('rgbLightText');
+    if (t) t.textContent = 'RGB Light: ' + (rgbLightOn ? 'ON' : 'OFF');
+}
+function toggleRgbLight() {
+    rgbLightOn = !rgbLightOn;
+    localStorage.setItem('rgbLightOn', rgbLightOn ? '1' : '0');
+    applyRgbLight();
+    showToast('RGB Light ' + (rgbLightOn ? 'ON 🌈' : 'OFF'));
+    toggleThreeDotMenu();
+}
+
+async function translateEssay() {
+    // The older menu command now uses the same full-essay workflow as the language button.
+    await toggleLanguage();
     toggleThreeDotMenu();
 }
 
@@ -1149,82 +1340,337 @@ function closeAbout() {
     document.getElementById('aboutOverlay').classList.remove('show');
 }
 
-// --- Timer Feature ---
-function openTimer() {
-    document.getElementById('timerPopup').classList.add('show');
-    toggleThreeDotMenu();
+// --- Timer / Stopwatch (inline, right side of the essay title) ---
+// T key = start/pause · click time = start/pause · mouse wheel = +/-1 min (timer)
+// Right-click = switch Timer <-> Stopwatch (the choice stays, even after reload) + quick add buttons
+const TIMER_DEFAULT_SECONDS = 15 * 60;
+let timerFinished = false;
+let timerEndAt = 0;
+let timerStartAt = 0;
+let timerSaved = { countdown: TIMER_DEFAULT_SECONDS, stopwatch: 0 };
+
+function timerFmt(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    const mm = String(m).padStart(2, '0'), ss = String(s).padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-function closeTimer() {
-    document.getElementById('timerPopup').classList.remove('show');
+function timerMarkup() {
+    return `<div class="inline-timer" id="inlineTimer" oncontextmenu="return openTimerMenu(event)" onwheel="return timerWheel(event)">
+        <div class="it-label" id="itLabel"></div>
+        <div class="it-time" id="itTime" onclick="toggleTimerRun()" title="Click: start/pause · Right-click: Timer/Stopwatch"></div>
+        <div class="it-btns">
+            <button id="itPlay" onclick="toggleTimerRun()" title="Start / Pause (T)">▶</button>
+            <button onclick="resetTimer()" title="Reset">↺</button>
+            <button id="itPlus" onclick="addTimerMinutes(15)" title="Add 15 minutes">+15</button>
+        </div>
+    </div>`;
 }
 
-function switchTimerMode(mode) {
-    timerMode = mode;
-    pauseTimer();
-    resetTimer();
-    document.getElementById('stopwatchModeBtn').classList.toggle('active', mode === 'stopwatch');
-    document.getElementById('countdownModeBtn').classList.toggle('active', mode === 'countdown');
-    document.getElementById('countdownSetup').style.display = mode === 'countdown' ? 'flex' : 'none';
+function refreshTimerUI() {
+    const title = document.querySelector('.essay-title-top');
+    if (title) title.classList.add('has-timer');
+    const box = document.getElementById('inlineTimer');
+    if (!box) return;
+    const isCd = timerMode === 'countdown';
+    document.getElementById('itTime').textContent = timerFmt(timerSeconds);
+    document.getElementById('itLabel').textContent = isCd ? 'Timer' : 'Stopwatch';
+    document.getElementById('itPlay').textContent = isTimerRunning ? '⏸' : '▶';
+    document.getElementById('itPlus').style.display = isCd ? '' : 'none';
+    box.classList.toggle('running', isTimerRunning);
+    box.classList.toggle('low', isCd && timerSeconds > 0 && timerSeconds <= 60);
+    box.classList.toggle('done', timerFinished);
+}
+
+function saveTimerState() {
+    try {
+        timerSaved[timerMode] = timerSeconds;
+        localStorage.setItem('essayTimerV2', JSON.stringify({
+            mode: timerMode, saved: timerSaved, running: isTimerRunning,
+            endAt: timerEndAt, startAt: timerStartAt, finished: timerFinished
+        }));
+    } catch (_) { }
+}
+
+function loadTimerState() {
+    try {
+        const d = JSON.parse(localStorage.getItem('essayTimerV2') || 'null');
+        if (!d) return;
+        if (d.mode === 'stopwatch' || d.mode === 'countdown') timerMode = d.mode;
+        if (d.saved) {
+            if (Number.isFinite(d.saved.countdown)) timerSaved.countdown = d.saved.countdown;
+            if (Number.isFinite(d.saved.stopwatch)) timerSaved.stopwatch = d.saved.stopwatch;
+        }
+        timerSeconds = timerSaved[timerMode];
+        timerFinished = !!d.finished;
+        if (d.running) {
+            if (timerMode === 'stopwatch') {
+                timerStartAt = d.startAt;
+                timerSeconds = Math.max(0, Math.floor((Date.now() - timerStartAt) / 1000));
+                isTimerRunning = true;
+                runTimerInterval();
+            } else {
+                const left = Math.ceil((d.endAt - Date.now()) / 1000);
+                if (left > 0) {
+                    timerEndAt = d.endAt;
+                    timerSeconds = left;
+                    isTimerRunning = true;
+                    runTimerInterval();
+                } else { timerSeconds = 0; timerFinished = true; }
+            }
+        }
+    } catch (_) { }
+}
+
+function tickTimer() {
+    if (timerMode === 'stopwatch') {
+        timerSeconds = Math.floor((Date.now() - timerStartAt) / 1000);
+    } else {
+        const left = Math.ceil((timerEndAt - Date.now()) / 1000);
+        if (left <= 0) { finishTimer(); return; }
+        timerSeconds = left;
+    }
+    refreshTimerUI();
+}
+
+function runTimerInterval() {
+    clearInterval(timerInterval);
+    timerInterval = setInterval(tickTimer, 250);
 }
 
 function startTimer() {
     if (isTimerRunning) return;
-
-    if (timerMode === 'countdown' && timerSeconds === 0) {
-        const mins = parseInt(document.getElementById('cdMinutes').value) || 0;
-        const secs = parseInt(document.getElementById('cdSeconds').value) || 0;
-        timerSeconds = (mins * 60) + secs;
-        if (timerSeconds <= 0) return;
-    }
-
+    if (timerMode === 'countdown' && timerSeconds <= 0) timerSeconds = TIMER_DEFAULT_SECONDS;
+    timerFinished = false;
     isTimerRunning = true;
-    document.getElementById('timerStartBtn').style.display = 'none';
-    document.getElementById('timerPauseBtn').style.display = 'inline-block';
-    document.getElementById('countdownSetup').style.display = 'none'; // Hide setup while running
-
-    timerInterval = setInterval(() => {
-        if (timerMode === 'stopwatch') {
-            timerSeconds++;
-        } else {
-            timerSeconds--;
-            if (timerSeconds <= 0) {
-                clearInterval(timerInterval);
-                isTimerRunning = false;
-                showToast("Timer Finished! ⏰");
-                // Reset UI
-                document.getElementById('timerStartBtn').style.display = 'inline-block';
-                document.getElementById('timerPauseBtn').style.display = 'none';
-                timerSeconds = 0;
-            }
-        }
-        updateTimerDisplay();
-    }, 1000);
+    timerEndAt = Date.now() + timerSeconds * 1000;
+    timerStartAt = Date.now() - timerSeconds * 1000;
+    runTimerInterval();
+    refreshTimerUI();
+    saveTimerState();
 }
 
 function pauseTimer() {
     clearInterval(timerInterval);
     isTimerRunning = false;
-    document.getElementById('timerStartBtn').style.display = 'inline-block';
-    document.getElementById('timerPauseBtn').style.display = 'none';
+    refreshTimerUI();
+    saveTimerState();
 }
 
 function resetTimer() {
-    pauseTimer();
-    timerSeconds = 0;
-    updateTimerDisplay();
-    if (timerMode === 'countdown') {
-        document.getElementById('countdownSetup').style.display = 'flex';
-    }
+    clearInterval(timerInterval);
+    isTimerRunning = false;
+    timerFinished = false;
+    timerSeconds = timerMode === 'countdown' ? TIMER_DEFAULT_SECONDS : 0;
+    refreshTimerUI();
+    saveTimerState();
 }
 
-function updateTimerDisplay() {
-    const h = Math.floor(timerSeconds / 3600);
-    const m = Math.floor((timerSeconds % 3600) / 60);
-    const s = timerSeconds % 60;
-    document.getElementById('timerDisplay').textContent =
-        `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+function toggleTimerRun() {
+    if (isTimerRunning) pauseTimer(); else startTimer();
 }
+
+// Replace Timer with Stopwatch (or back). Stays until you switch again.
+function setTimerMode(mode) {
+    if (mode === timerMode) return;
+    clearInterval(timerInterval);
+    isTimerRunning = false;
+    timerSaved[timerMode] = timerSeconds;
+    timerMode = mode;
+    timerSeconds = timerSaved[mode];
+    timerFinished = false;
+    refreshTimerUI();
+    saveTimerState();
+    showToast(mode === 'stopwatch' ? 'Stopwatch laga diya ⏱' : 'Timer laga diya ⏳');
+}
+
+function toggleTimerType() {
+    setTimerMode(timerMode === 'countdown' ? 'stopwatch' : 'countdown');
+}
+
+function openTimer() {   // ⋮ menu: start / pause
+    toggleTimerRun();
+    toggleThreeDotMenu();
+}
+
+function switchTimerFromMenu() {   // ⋮ menu: Timer <-> Stopwatch
+    toggleTimerType();
+    toggleThreeDotMenu();
+}
+
+function finishTimer() {
+    clearInterval(timerInterval);
+    isTimerRunning = false;
+    timerSeconds = 0;
+    timerFinished = true;
+    refreshTimerUI();
+    saveTimerState();
+    showToast('Time Up! ⏰');
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [0, 0.35, 0.7].forEach(t => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+            g.gain.setValueAtTime(0.15, ctx.currentTime + t);
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+            o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+        });
+    } catch (_) { }
+}
+
+// n = minutes to add (negative = remove). Only for Timer mode. No typing needed.
+function addTimerMinutes(n) {
+    if (timerMode !== 'countdown') return;
+    const d = n * 60;
+    if (timerSeconds + d < 1) return;
+    timerFinished = false;
+    timerSeconds += d;
+    if (isTimerRunning) timerEndAt += d * 1000;
+    refreshTimerUI();
+    saveTimerState();
+}
+
+let timerLastCustom = (() => { try { const v = parseInt(localStorage.getItem('essayTimerCustom')); return v > 0 ? v : 900; } catch (_) { return 900; } })();
+
+// Custom timer: total seconds (set from the right-click menu, no browser dialog)
+function setCustomTimer(total, startNow) {
+    if (!(total >= 1)) { showToast('Time 0 nahi ho sakta'); return; }
+    if (timerMode !== 'countdown') setTimerMode('countdown');
+    clearInterval(timerInterval);
+    isTimerRunning = false;
+    timerFinished = false;
+    timerSeconds = Math.round(total);
+    timerLastCustom = timerSeconds;
+    try { localStorage.setItem('essayTimerCustom', String(timerLastCustom)); } catch (_) { }
+    refreshTimerUI();
+    saveTimerState();
+    if (startNow) startTimer();
+}
+
+function timerWheel(e) {
+    if (e.ctrlKey || e.metaKey || timerMode !== 'countdown') return true;
+    e.preventDefault();
+    addTimerMinutes(e.deltaY < 0 ? 1 : -1);
+    return false;
+}
+
+function closeTimerMenu() {
+    const m = document.getElementById('timerMenu');
+    if (m) m.remove();
+}
+
+function openTimerMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeTimerMenu();
+    const isCd = timerMode === 'countdown';
+    const menu = document.createElement('div');
+    menu.id = 'timerMenu';
+    menu.className = 'timer-menu';
+    const head = document.createElement('div');
+    head.className = 'tm-head';
+    head.textContent = isCd ? '⏳ Timer chal raha hai' : '⏱ Stopwatch laga hai';
+    menu.appendChild(head);
+
+    const row = (label, fn, cls) => {
+        const b = document.createElement('button');
+        b.className = 'tm-item' + (cls ? ' ' + cls : '');
+        b.textContent = label;
+        b.onclick = (ev) => { ev.stopPropagation(); closeTimerMenu(); fn(); };
+        menu.appendChild(b);
+    };
+    row(isCd ? '🔁  Stopwatch lagayein' : '🔁  Timer lagayein', toggleTimerType, 'tm-main');
+
+    if (isCd) {
+        const lab = document.createElement('div');
+        lab.className = 'tm-label';
+        lab.textContent = 'Time jodein / ghatayein (minute)';
+        menu.appendChild(lab);
+        const chips = document.createElement('div');
+        chips.className = 'tm-chips';
+        [['+1', 1], ['+5', 5], ['+10', 10], ['+15', 15], ['+30', 30], ['+60', 60], ['−1', -1], ['−5', -5]].forEach(([t, n]) => {
+            const c = document.createElement('button');
+            c.className = 'tm-chip';
+            c.textContent = t;
+            c.onclick = (ev) => { ev.stopPropagation(); addTimerMinutes(n); };   // menu stays open for multiple taps
+            chips.appendChild(c);
+        });
+        menu.appendChild(chips);
+    }
+    // ---- Custom timer panel (steppers + typing, inside the menu) ----
+    const clab = document.createElement('div');
+    clab.className = 'tm-label';
+    clab.textContent = '✏️ Custom timer';
+    menu.appendChild(clab);
+    const panel = document.createElement('div');
+    panel.className = 'tm-custom';
+    const inputs = [];
+    const defs = [['hr', 99, Math.floor(timerLastCustom / 3600)],
+                  ['min', 59, Math.floor((timerLastCustom % 3600) / 60)],
+                  ['sec', 59, timerLastCustom % 60]];
+    defs.forEach(([name, max, val], idx) => {
+        if (idx) { const c = document.createElement('span'); c.className = 'tm-colon'; c.textContent = ':'; panel.appendChild(c); }
+        const col = document.createElement('div');
+        col.className = 'tm-col';
+        const up = document.createElement('button');
+        up.className = 'tm-step'; up.textContent = '▲';
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.className = 'tm-num'; inp.min = 0; inp.max = max; inp.value = val;
+        inp.inputMode = 'numeric';
+        const down = document.createElement('button');
+        down.className = 'tm-step'; down.textContent = '▼';
+        const small = document.createElement('div');
+        small.className = 'tm-unit'; small.textContent = name;
+        const clamp = () => { let v = parseInt(inp.value); if (!(v >= 0)) v = 0; inp.value = Math.min(max, v); };
+        const step = (dlt) => { clamp(); inp.value = Math.max(0, Math.min(max, parseInt(inp.value) + dlt)); };
+        up.onclick = (ev) => { ev.stopPropagation(); step(1); };
+        down.onclick = (ev) => { ev.stopPropagation(); step(-1); };
+        inp.addEventListener('blur', clamp);
+        inp.addEventListener('focus', () => inp.select());
+        inp.addEventListener('wheel', (ev) => { ev.preventDefault(); step(ev.deltaY < 0 ? 1 : -1); }, { passive: false });
+        inp.addEventListener('keydown', (ev) => {
+            ev.stopPropagation();
+            if (ev.key === 'Enter') { clamp(); doSet(false); }
+            if (ev.key === 'Escape') closeTimerMenu();
+        });
+        col.append(up, inp, down, small);
+        panel.appendChild(col);
+        inputs.push(inp);
+    });
+    menu.appendChild(panel);
+    const doSet = (startNow) => {
+        const total = (parseInt(inputs[0].value) || 0) * 3600 + (parseInt(inputs[1].value) || 0) * 60 + (parseInt(inputs[2].value) || 0);
+        if (!(total >= 1)) { showToast('Time 0 nahi ho sakta'); return; }
+        closeTimerMenu();
+        setCustomTimer(total, startNow);
+    };
+    const acts = document.createElement('div');
+    acts.className = 'tm-actions';
+    const bSet = document.createElement('button');
+    bSet.className = 'tm-chip'; bSet.textContent = '✔ Set';
+    bSet.onclick = (ev) => { ev.stopPropagation(); doSet(false); };
+    const bGo = document.createElement('button');
+    bGo.className = 'tm-chip tm-go'; bGo.textContent = '▶ Set & Start';
+    bGo.onclick = (ev) => { ev.stopPropagation(); doSet(true); };
+    acts.append(bSet, bGo);
+    menu.appendChild(acts);
+
+    row(isCd ? '↺  Reset (15 min)' : '↺  Reset (00:00)', resetTimer);
+
+    menu.addEventListener('click', (ev) => ev.stopPropagation());
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(6, Math.min(e.clientX, window.innerWidth - r.width - 8)) + 'px';
+    menu.style.top = Math.max(6, Math.min(e.clientY, window.innerHeight - r.height - 8)) + 'px';
+    return false;
+}
+document.addEventListener('click', closeTimerMenu);
+document.addEventListener('scroll', closeTimerMenu, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTimerMenu(); });
+
+loadTimerState();
 
 // --- Common Helper: Toast ---
 function showToast(msg) {
@@ -1266,8 +1712,9 @@ function renderTabs() {
         btn.className = `tab ${index === currentTab ? 'active' : ''}`;
         btn.dataset.tabIndex = index;
         btn.draggable = true;
-        btn.title = (essay.title[currentLang] || essay.title.hi || '') + ' — right-click for more options, long-press+drag to reorder';
-        btn.innerHTML = `<span class="tab-number">${index + 1}</span>${essay.isCustom ? escapeHtml(essay.title[currentLang]) : essay.title[currentLang]}`;
+        btn.title = (getEssayValue(essay, 'title', currentLang) || essay.title.hi || essay.title.en || '') + ' — right-click for more options, long-press+drag to reorder';
+        const tabTitle = getEssayValue(essay, 'title', currentLang);
+        btn.innerHTML = `<span class="tab-number">${index + 1}</span>${essay.isCustom ? escapeHtml(tabTitle) : tabTitle}`;
         btn.onclick = () => {
             if (ignoreNextTabClick) {
                 ignoreNextTabClick = false;
@@ -1749,10 +2196,11 @@ function renderContent() {
     // Essays added by the user are plain text: escape so "<" or "&" can't break the page
     const safe = (value) => essay.isCustom ? escapeHtml(value) : value;
     div.innerHTML = `
-        <div class="essay-title essay-title-top">${currentTab + 1}. ${safe(essay.title[currentLang])}</div>
-        <div class="writing-text ${isBold ? 'bold' : ''} ${isReadingMode ? 'reading-style' : ''}">${safe(essay.content[currentLang])}</div>
+        <div class="essay-title essay-title-top">${timerMarkup()}${currentTab + 1}. ${safe(getEssayValue(essay, 'title', currentLang))}</div>
+        <div class="writing-text ${isBold ? 'bold' : ''} ${isReadingMode ? 'reading-style' : ''}">${safe(getEssayValue(essay, 'content', currentLang))}</div>
     `;
     container.appendChild(div);
+    refreshTimerUI();
     applyStyles();
 
     updateBookmarkIcon();
@@ -1798,11 +2246,7 @@ function switchTab(index) {
 }
 
 // --- Toggles ---
-function toggleLanguage() {
-    currentLang = currentLang === 'hi' ? 'en' : 'hi';
-    updateUILanguage();
-    renderContent();
-}
+// (toggleLanguage lives above with the auto-translate logic)
 
 function toggleTheme() {
     currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -2206,6 +2650,11 @@ document.addEventListener('keydown', (e) => {
         case 'Escape':
             if (isFocusMode) exitFocusMode();
             else if (isReadingMode) exitReadingMode();
+            break;
+        case 't': case 'T':
+            e.preventDefault();
+            if (document.getElementById('manualLangOverlay').style.display === 'flex') break;
+            toggleTimerRun();
             break;
         case 'g': case 'G':
             e.preventDefault();
