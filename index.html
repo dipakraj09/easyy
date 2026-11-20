@@ -10,7 +10,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&amp;family=Noto+Sans:wght@400;500;600;700&amp;display=swap"
         rel="stylesheet" />
-    <link href="style.css" rel="stylesheet" />
+        <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
@@ -41,10 +41,12 @@
                 Aloud</span></button>
         <button class="tdd-item" onclick="toggleNightFilter()"><span>🌙</span> <span id="nightFilterText">Night
                 Filter</span></button>
-        <button class="tdd-item" onclick="openTimer()"><span>⏱️</span> Live Timer</button>
+        <button class="tdd-item" onclick="openTimer()"><span>⏱️</span> Timer / Stopwatch Start-Pause (T)</button>
+        <button class="tdd-item" onclick="switchTimerFromMenu()"><span>🔁</span> Timer ↔ Stopwatch</button>
         <button class="tdd-item" onclick="jumpToEssay()"><span>🔢</span> Jump to Essay #</button>
         <button class="tdd-item" onclick="editEssay()"><span>✏️</span> Edit Essay</button>
         <button class="tdd-item" onclick="deleteEssay()"><span>🗑️</span> Delete Essay</button>
+        <button class="tdd-item" onclick="toggleRgbLight()"><span>🌈</span> <span id="rgbLightText">RGB Light: OFF</span></button>
         <button class="tdd-item" onclick="resetSettings()"><span>🔄</span> Reset All Settings</button>
         <button class="tdd-item" onclick="showAbout()"><span>ℹ️</span> About App</button>
     </div>
@@ -128,7 +130,7 @@
                     <button class="modern-btn btn-size" onclick="adjustSize(-2)"><span>A-</span></button>
                     <button class="modern-btn btn-size" onclick="adjustSize(2)"><span>A+</span></button>
                     <!-- Row 2: Theme/Lang -->
-                    <button class="modern-btn btn-lang" onclick="toggleLanguage()">
+                    <button class="modern-btn btn-lang" onclick="toggleLanguage()" oncontextmenu="manualLanguageEntry(event)" title="Left-click: auto translate · Right-click: manual add">
                         <span id="langIcon">अ/A</span>
                         <span class="ui-text" data-key="langBtn">Eng</span>
                     </button>
@@ -297,34 +299,6 @@
         </div>
     </div>
 
-    <!-- Timer Popup -->
-    <div class="timer-popup" id="timerPopup">
-        <div class="timer-header">
-            <span>⏱️ Live Timer</span>
-            <button class="timer-close-btn" onclick="closeTimer()">✕</button>
-        </div>
-        <div class="timer-mode-switch">
-            <button class="timer-mode-btn active" id="stopwatchModeBtn"
-                onclick="switchTimerMode('stopwatch')">Stopwatch</button>
-            <button class="timer-mode-btn" id="countdownModeBtn"
-                onclick="switchTimerMode('countdown')">Countdown</button>
-        </div>
-        <div id="countdownSetup" style="display:none;">
-            <div class="countdown-inputs">
-                <input type="number" id="cdMinutes" class="cd-input" value="5" min="0" max="999" placeholder="Min" />
-                <span>:</span>
-                <input type="number" id="cdSeconds" class="cd-input" value="0" min="0" max="59" placeholder="Sec" />
-            </div>
-        </div>
-        <div class="timer-display" id="timerDisplay">00:00:00</div>
-        <div class="timer-controls">
-            <button class="timer-ctrl-btn tc-start" id="timerStartBtn" onclick="startTimer()">▶ Start</button>
-            <button class="timer-ctrl-btn tc-pause" id="timerPauseBtn" onclick="pauseTimer()" style="display:none;">⏸
-                Pause</button>
-            <button class="timer-ctrl-btn tc-reset" onclick="resetTimer()">↺ Reset</button>
-        </div>
-    </div>
-
     <!-- Night Filter Overlay -->
     <div class="night-filter-overlay" id="nightFilterOverlay"></div>
 
@@ -382,6 +356,20 @@
         </div>
     </div>
 
+    <!-- Manual language entry modal -->
+    <div id="manualLangOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100000;align-items:center;justify-content:center;padding:15px;" onclick="closeManualLang()">
+        <div onclick="event.stopPropagation()" style="background:var(--panel-bg);color:var(--text-color);border:1px solid var(--border-color);border-radius:16px;padding:20px;width:100%;max-width:700px;max-height:92vh;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow);">
+            <div id="manualLangTitleHead" style="font-size:18px;font-weight:700;"></div>
+            <input id="manualLangTitle" type="text" placeholder="Title" style="padding:10px 12px;border-radius:10px;border:1px solid var(--border-color);background:var(--tab-bg);color:var(--text-color);font-size:16px;" />
+            <textarea id="manualLangText" placeholder="Poora essay yahan likhein / paste karein" style="min-height:45vh;padding:10px 12px;border-radius:10px;border:1px solid var(--border-color);background:var(--tab-bg);color:var(--text-color);font-size:16px;line-height:1.6;resize:vertical;"></textarea>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button id="manualLangAutoBtn" class="close-modal" style="background:#2d8cff;margin-right:auto;" onclick="autoFillManualLang()">🌐 Auto Translate</button>
+                <button class="close-modal" style="background:#555;" onclick="closeManualLang()">Cancel</button>
+                <button class="close-modal" onclick="saveManualLang()">💾 Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Stats Modal -->
     <div class="modal-overlay" id="statsOverlay" onclick="closeStats()">
         <div class="stats-modal" onclick="event.stopPropagation()">
@@ -394,7 +382,7 @@
     <!-- Small popup for size / essay-number feedback -->
     <div class="num-jump-badge" id="numJumpBadge"></div>
 
-    <script defer src="script.js"></script>
+        <script src="script.js"></script>
 </body>
 
 </html>
